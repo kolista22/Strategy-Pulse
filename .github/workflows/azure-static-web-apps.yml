@@ -1,0 +1,61 @@
+name: Azure Static Web Apps — manual release
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy only after explicit owner approval and Free SKU verification'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strategy-pulse-azure-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-optional-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run typecheck
+      - name: Verify static deployment files
+        run: |
+          test -s out/index.html
+          test -s out/404.html
+          test -s out/staticwebapp.config.json
+          test -d out/_next/static
+      - name: Require deployment token
+        if: ${{ inputs.deploy }}
+        env:
+          DEPLOYMENT_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: |
+          if [ -z "$DEPLOYMENT_TOKEN" ]; then
+            echo 'Missing AZURE_STATIC_WEB_APPS_API_TOKEN secret.'
+            exit 1
+          fi
+      - name: Upload prebuilt static export (no resource provisioning)
+        if: ${{ inputs.deploy }}
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: out
+          output_location: ''
+          api_location: ''
+          skip_app_build: true
+          skip_api_build: true
+          is_static_export: true

@@ -1,0 +1,34 @@
+# Dependencies and generated output
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment files, credentials, local configuration
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.keystore
+.npmrc
+.azure/
+secrets/
+credentials/
+*.local.*
+
+# Machine files and logs
+.DS_Store
+.idea/
+.vscode/
+*.log
+npm-debug.log*
+
+# Private readiness notes and raw machine-specific evidence (keep screenshots)
+/docs/AZURE.md
+/docs/DEPLOYMENT_READINESS.md
+/docs/evidence/*.txt
+/docs/evidence/*.json
