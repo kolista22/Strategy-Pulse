@@ -45,15 +45,36 @@ export function decodeGoals(raw: string): Goal[] {
   });
 }
 export type StoragePort = { getItem(key: string): string | null; setItem(key: string, value: string): void };
-export function loadGoals(storage: StoragePort): { goals: Goal[]; warning: string | null; writable: boolean } {
-  try {
-    const raw = storage.getItem(STORAGE_KEY);
-    return { goals: raw === null ? freshGoals() : decodeGoals(raw), warning: null, writable: true };
-  } catch {
-    return { goals: freshGoals(), warning: "Saved goals could not be read. A temporary board is shown; existing data will not be overwritten. Reload after checking browser storage.", writable: false };
-  }
+export function loadGoals(storage: StoragePort): { goals: Goal[]; warning: string | null; writable: boolean; raw: string | null; recoverable: boolean } {
+  let raw: string | null;
+  try { raw = storage.getItem(STORAGE_KEY); }
+  catch { return { goals: freshGoals(), warning: "Browser storage cannot be read. Changes stay in this tab and may be lost on refresh.", writable: false, raw: null, recoverable: false }; }
+  try { return { goals: raw === null ? freshGoals() : decodeGoals(raw), warning: null, writable: true, raw, recoverable: false }; }
+  catch { return { goals: freshGoals(), warning: "Saved data is damaged or incompatible. This temporary board will not overwrite it. You can reset this app’s local data after confirmation; temporary changes will be lost on refresh.", writable: false, raw, recoverable: true }; }
 }
-export function saveGoals(storage: StoragePort, goals: Goal[]): string | null {
-  try { const raw = JSON.stringify({ version: 1, goals }); decodeGoals(raw); storage.setItem(STORAGE_KEY, raw); return null; }
-  catch { return "Changes are available in this tab, but could not be saved. Keep this tab open and check browser storage."; }
+export type SaveResult =
+  | { status: "saved"; raw: string }
+  | { status: "conflict"; message: string }
+  | { status: "error"; message: string };
+export const CONFLICT_MESSAGE = "Another tab changed the saved board. Saving is paused to protect that data. Reload the latest data to continue; this tab’s unsaved changes will be discarded.";
+export function saveGoals(storage: StoragePort, goals: Goal[], expectedRaw: string | null): SaveResult {
+  try {
+    const raw = JSON.stringify({ version: 1, goals });
+    decodeGoals(raw);
+    // Best-effort stale-write guard, NOT an atomic compare-and-set.
+    if (storage.getItem(STORAGE_KEY) !== expectedRaw) return { status: "conflict", message: CONFLICT_MESSAGE };
+    storage.setItem(STORAGE_KEY, raw);
+    if (storage.getItem(STORAGE_KEY) !== raw) return { status: "conflict", message: CONFLICT_MESSAGE };
+    return { status: "saved", raw };
+  } catch { return { status: "error", message: "Not saved. Changes are only in this tab and may be lost on refresh. Check browser storage before trying again." }; }
+}
+export type ResetStoragePort = StoragePort & { removeItem(key: string): void };
+export function resetLocalData(storage: ResetStoragePort, confirmed: boolean, expectedRaw: string | null): { status: "cancelled" | "reset" | "conflict" | "error"; message?: string } {
+  if (!confirmed) return { status: "cancelled" };
+  try {
+    if (storage.getItem(STORAGE_KEY) !== expectedRaw) return { status: "conflict", message: CONFLICT_MESSAGE };
+    storage.removeItem(STORAGE_KEY);
+    if (storage.getItem(STORAGE_KEY) !== null) return { status: "conflict", message: CONFLICT_MESSAGE };
+    return { status: "reset" };
+  } catch { return { status: "error", message: "Reset failed. Local data could not be removed; recovery has not been completed." }; }
 }
